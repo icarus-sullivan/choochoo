@@ -21,7 +21,7 @@ DEFAULTS = {
         "rank": 16,
         "alpha": 32,
         "dropout": 0.0,
-        "target_modules": ["attn", "mlp"],
+        "target_modules": None,  # None → each adapter uses its own DEFAULT_LORA_TARGETS
         "dual_lora": False,
         "high_noise_weight": 1.0,
         "low_noise_weight": 1.0,

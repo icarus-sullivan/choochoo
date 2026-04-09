@@ -141,13 +141,14 @@ class QwenEditAdapter(BaseModelAdapter):
     """
 
     DEFAULT_LORA_TARGETS = [
-        r"attn\d*\.to_q",
-        r"attn\d*\.to_k",
-        r"attn\d*\.to_v",
-        r"attn\d*\.to_out",
-        r"ff\.net\.\d+\.proj",
-        r"proj_in",
-        r"proj_out",
+        # Image stream attention
+        r"attn\.to_q", r"attn\.to_k", r"attn\.to_v", r"attn\.to_out",
+        # Text stream attention (MMDiT add_ projections)
+        r"attn\.add_q_proj", r"attn\.add_k_proj", r"attn\.add_v_proj", r"attn\.to_add_out",
+        # Image stream FFN
+        r"img_mlp\.net\.0\.proj", r"img_mlp\.net\.2",
+        # Text stream FFN
+        r"txt_mlp\.net\.0\.proj", r"txt_mlp\.net\.2",
     ]
 
     def __init__(self, cfg: DictConfig):
@@ -212,7 +213,7 @@ class QwenEditAdapter(BaseModelAdapter):
         self._lora_injector = injector
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")
-        target_modules = list(self.cfg.lora.target_modules)
+        target_modules = list(self.cfg.lora.get("target_modules", None) or self.DEFAULT_LORA_TARGETS)
         injector.target_modules = target_modules
         injector.inject(self.model)
         logger.info(
