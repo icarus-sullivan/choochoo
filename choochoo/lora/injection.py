@@ -137,8 +137,10 @@ class LoRAInjector:
                 if layer.dual:
                     a2_key = f"{prefix}lora_A2.weight" if f"{prefix}lora_A2.weight" in state_dict else f"{prefix}lora_A2"
                     b2_key = f"{prefix}lora_B2.weight" if f"{prefix}lora_B2.weight" in state_dict else f"{prefix}lora_B2"
+
                     if a2_key in state_dict:
                         layer.lora_A2.data.copy_(state_dict[a2_key])
+                    if b2_key in state_dict:
                         layer.lora_B2.data.copy_(state_dict[b2_key])
 
     def num_injected(self) -> int:

@@ -150,11 +150,13 @@ class DataPipeline:
             _rank = int(_lora_cfg.get("rank", 16) if _lora_cfg is not None else 16)
             _bs_val = cfg_training.get("batch_size", 1)
             _batch = 1 if _bs_val == "auto" else int(_bs_val)
+            _target_exposure = 0.95 if model_type in ("qwen", "qwen_edit") else 100.0
             analysis = analyzer.analyze(
                 target_steps=int(cfg_training.max_steps),
                 lr=_lr,
                 rank=_rank,
                 batch_size=_batch,
+                target_exposure=_target_exposure,
             )
             logger.info(
                 f"Dataset: {analysis['total_samples']} samples, "

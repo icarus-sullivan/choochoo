@@ -36,6 +36,7 @@ class DatasetAnalyzer:
         lr: float = 1e-4,
         rank: int = 16,
         batch_size: int = 1,
+        target_exposure: float = 100.0,
     ) -> Dict[str, Any]:
         """Run full analysis. Returns summary dict."""
         image_files = self._find_files(IMAGE_EXTS)
@@ -58,6 +59,7 @@ class DatasetAnalyzer:
         result["recommended_repeats"] = self._calc_repeats(
             result["total_samples"], target_steps,
             lr=lr, rank=rank, batch_size=batch_size,
+            target_exposure=target_exposure,
         )
         result["bucket_distribution"] = result.get("resolution_distribution", {})
 

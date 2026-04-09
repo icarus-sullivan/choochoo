@@ -126,9 +126,7 @@ class BaseModelAdapter(ABC):
 
             def make_checkpointed(fwd):
                 def checkpointed_forward(*args, **kwargs):
-                    # use_reentrant=True is faster for large transformers — avoids
-                    # per-op autograd hooks that compound to significant overhead at 20B scale.
-                    return ckpt.checkpoint(fwd, *args, use_reentrant=True)
+                    return ckpt.checkpoint(fwd, *args, use_reentrant=False, **kwargs)
                 return checkpointed_forward
 
             module.forward = make_checkpointed(original_forward)
