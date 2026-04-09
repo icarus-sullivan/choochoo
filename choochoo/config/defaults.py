@@ -58,6 +58,7 @@ DEFAULTS = {
             "find_unused_parameters": False,
             "gradient_as_bucket_view": True,
             "static_graph": True,
+            "bucket_cap_mb": 200,  # size to hold all LoRA params in one all-reduce (~106M × 2B bf16 ≈ 200MB)
         },
     },
     "performance": {

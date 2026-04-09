@@ -158,6 +158,12 @@ def main() -> None:
     if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
         os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+    # TF32 gives ~20-30% faster matmuls on Ampere+ with no meaningful accuracy loss
+    # for LoRA training. No-op for bf16 compute paths; affects float32 accumulation
+    # (optimizer state, loss scalar). Safe on all GPU generations including Blackwell.
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+
     # NCCL defaults assume tight GPU coupling (NVLink / shared PCIe switch).
     # On SYS-topology nodes (GPUs on separate NUMA nodes, no NVLink) the default
     # P2P and GDR paths hang or perform poorly. Disable them so NCCL falls back

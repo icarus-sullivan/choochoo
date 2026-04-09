@@ -47,6 +47,7 @@ def setup_ddp(
         find_unused_parameters=bool(cfg_ddp.get("find_unused_parameters", False)),
         gradient_as_bucket_view=bool(cfg_ddp.get("gradient_as_bucket_view", True)),
         static_graph=bool(cfg_ddp.get("static_graph", True)),
+        bucket_cap_mb=int(cfg_ddp.get("bucket_cap_mb", 200)),
     )
 
     logger.info(
