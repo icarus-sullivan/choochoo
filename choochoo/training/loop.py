@@ -49,11 +49,11 @@ def _training_phase(
 ) -> TrainingPhase:
     if step < warmup_steps:
         return TrainingPhase.WARMUP
-    if conv_state.plateau_detected:
-        return TrainingPhase.CONVERGENCE
     burnin_end = warmup_steps + max(warmup_steps, max_steps // 10)
     if step < burnin_end:
         return TrainingPhase.BURNIN
+    if conv_state.plateau_detected:
+        return TrainingPhase.CONVERGENCE
     return TrainingPhase.TRAINING
 
 logger = logging.getLogger(__name__)
@@ -172,6 +172,8 @@ class Trainer:
             _name = self.cfg.get("name", "run")
             db_path = str(Path(output_dir) / f"{_prefix}-{_name}.db")
             self.sqlite_writer = SQLiteMetricsWriter(db_path)
+            self.sqlite_writer.write_meta("total_steps", str(int(cfg_t.max_steps)))
+            self.sqlite_writer.write_meta("model_type", self.cfg.model.type)
 
         # Training-time sampler (main process only)
         self.sampler = TrainingSampler(self.cfg, self.adapter, output_dir=output_dir)
@@ -254,6 +256,23 @@ class Trainer:
                 if self.cfg.performance.get("vram_fragmentation_reduction", True):
                     self._vram24.clear_fragmentation()
 
+            # SQLite: write every step (non-blocking, background thread)
+            if self.is_main and self.sqlite_writer is not None:
+                phase = _training_phase(
+                    step=step,
+                    warmup_steps=int(self.cfg.training.lr_warmup_steps),
+                    max_steps=max_steps,
+                    conv_state=state,
+                )
+                self.sqlite_writer.log(
+                    step=step + 1,
+                    loss=loss,
+                    lr=self.scheduler.get_last_lr()[0],
+                    phase=phase,
+                    wall_time=time.time(),
+                    grad_norm=metrics.get("grad_norm"),
+                )
+
             # Logging
             if self.is_main and (step + 1) % log_every == 0:
                 prof_summary = self.profiler.summarize()
@@ -265,22 +284,6 @@ class Trainer:
                     **{k: v for k, v in metrics.items() if k != "loss"},
                 }
                 self.metrics_logger.log(step, log_metrics)
-
-                if self.sqlite_writer is not None:
-                    phase = _training_phase(
-                        step=step,
-                        warmup_steps=int(self.cfg.training.lr_warmup_steps),
-                        max_steps=max_steps,
-                        conv_state=state,
-                    )
-                    self.sqlite_writer.log(
-                        step=step + 1,
-                        loss=loss,
-                        lr=log_metrics["lr"],
-                        phase=phase,
-                        samples_per_sec=prof_summary.samples_per_sec,
-                        gpu_util=prof_summary.mean_gpu_util,
-                    )
 
                 if prof_summary.suggestions:
                     for suggestion in prof_summary.suggestions:
@@ -347,9 +350,10 @@ class Trainer:
         if is_accum_step:
             self.profiler.start_optimizer()
             self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(
+            grad_norm = torch.nn.utils.clip_grad_norm_(
                 self.adapter.get_trainable_params(), max_norm=1.0
-            )
+            ).item()
+            metrics["grad_norm"] = grad_norm
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.scheduler.step()

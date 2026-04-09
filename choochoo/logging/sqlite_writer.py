@@ -14,7 +14,7 @@ import queue
 import sqlite3
 import threading
 from enum import Enum
-from typing import Any
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class TrainingPhase(str, Enum):
 
 
 _STOP = object()  # sentinel to shut down the worker thread
+_META = object()  # sentinel for run_meta writes
 
 
 class SQLiteMetricsWriter:
@@ -35,7 +36,9 @@ class SQLiteMetricsWriter:
     Usage::
 
         writer = SQLiteMetricsWriter("/output/qwen-myrun.db")
+        writer.write_meta("total_steps", "3400")
         writer.log(step=1, loss=0.42, lr=1e-4, phase=TrainingPhase.WARMUP,
+                   wall_time=time.time(), grad_norm=0.85,
                    samples_per_sec=2.1, gpu_util=0.93)
         writer.close()
     """
@@ -53,10 +56,16 @@ class SQLiteMetricsWriter:
         loss: float,
         lr: float,
         phase: TrainingPhase,
+        wall_time: Optional[float] = None,
+        grad_norm: Optional[float] = None,
         **extras: Any,
     ) -> None:
         """Enqueue a metrics row. Returns immediately (non-blocking)."""
-        self._queue.put((step, float(loss), float(lr), phase.value, extras))
+        self._queue.put((step, float(loss), float(lr), phase.value, wall_time, grad_norm, extras))
+
+    def write_meta(self, key: str, value: str) -> None:
+        """Enqueue a run_meta key/value write. Returns immediately (non-blocking)."""
+        self._queue.put((_META, key, value))
 
     def close(self) -> None:
         """Flush remaining writes and shut down the background thread."""
@@ -69,11 +78,19 @@ class SQLiteMetricsWriter:
         con = sqlite3.connect(self._db_path)
         con.execute("""
             CREATE TABLE IF NOT EXISTS metrics (
-                step     INTEGER PRIMARY KEY,
-                loss     REAL NOT NULL,
-                lr       REAL NOT NULL,
-                phase    TEXT NOT NULL,
-                extras   TEXT          -- JSON: samples_per_sec, gpu_util, etc.
+                step       INTEGER PRIMARY KEY,
+                loss       REAL NOT NULL,
+                lr         REAL NOT NULL,
+                phase      TEXT NOT NULL,
+                wall_time  REAL,
+                grad_norm  REAL,
+                extras     TEXT          -- JSON: samples_per_sec, gpu_util, etc.
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS run_meta (
+                key   TEXT PRIMARY KEY,
+                value TEXT
             )
         """)
         con.commit()
@@ -82,11 +99,23 @@ class SQLiteMetricsWriter:
             item = self._queue.get()
             if item is _STOP:
                 break
-            step, loss, lr, phase, extras = item
+            if isinstance(item, tuple) and item[0] is _META:
+                _, key, value = item
+                try:
+                    con.execute(
+                        "INSERT OR REPLACE INTO run_meta VALUES (?,?)",
+                        (key, value),
+                    )
+                    con.commit()
+                except Exception:
+                    logger.exception("SQLiteMetricsWriter: failed to write meta key=%s", key)
+                continue
+
+            step, loss, lr, phase, wall_time, grad_norm, extras = item
             try:
                 con.execute(
-                    "INSERT OR REPLACE INTO metrics VALUES (?,?,?,?,?)",
-                    (step, loss, lr, phase, json.dumps(extras)),
+                    "INSERT OR REPLACE INTO metrics VALUES (?,?,?,?,?,?,?)",
+                    (step, loss, lr, phase, wall_time, grad_norm, json.dumps(extras)),
                 )
                 con.commit()
             except Exception:
