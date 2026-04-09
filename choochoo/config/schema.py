@@ -144,11 +144,11 @@ def resolve_auto_values(cfg: DictConfig, hardware_info: Dict[str, Any]) -> DictC
     if cfg["performance"]["xformers"] == "auto":
         cfg["performance"]["xformers"] = hardware_info.get("has_xformers", False)
 
-    # Gradient checkpointing — disable at 32 GB+ unless the model is qwen_edit,
-    # which has 20B params and long token sequences that OOM without recomputation.
+    # Gradient checkpointing — disable at 32 GB+ unless the model is a large Qwen variant,
+    # which has 20B params and OOMs without recomputation even on 95 GB GPUs.
     if cfg["performance"]["gradient_checkpointing"] == "auto":
         model_type_for_ckpt = cfg["model"].get("type", "")
-        if model_type_for_ckpt == "qwen_edit":
+        if model_type_for_ckpt in {"qwen_edit", "qwen"}:
             cfg["performance"]["gradient_checkpointing"] = True
         else:
             cfg["performance"]["gradient_checkpointing"] = vram_per_gpu < 32
@@ -171,9 +171,8 @@ def resolve_auto_values(cfg: DictConfig, hardware_info: Dict[str, Any]) -> DictC
 
     # Batch size and gradient accumulation
     if cfg["training"]["batch_size"] == "auto":
-        if model_type == "qwen_edit":
-            # 20B model with long token sequences (4096 tokens at 1024px) —
-            # attention activation memory dominates; batch=1 is the safe ceiling
+        if model_type in {"qwen_edit", "qwen"}:
+            # 20B model — activation memory dominates; batch=1 is the safe ceiling
             # until flash attention is available on sm_120.
             cfg["training"]["batch_size"] = 1
         elif vram_per_gpu >= 96:        # RTX 6000 Blackwell (96 GB)
