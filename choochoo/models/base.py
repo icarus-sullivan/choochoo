@@ -85,7 +85,8 @@ class BaseModelAdapter(ABC):
         matched = {p: [] for p in patterns}
         for name in linear_layers:
             for p in patterns:
-                if re.match(p, name):
+                if re.search(p, name):
+                # if re.match(p, name):
                     matched[p].append(name)
 
         active_patterns = [p for p, hits in matched.items() if hits]
