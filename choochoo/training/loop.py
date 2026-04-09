@@ -37,6 +37,7 @@ _MODEL_PREFIX = {
     "wan_i2v":    "wan",
     "wan22_dual": "wan",
     "qwen_edit":  "qwen",
+    "qwen":       "qwen",
     "ltx2":       "ltx2",
 }
 
