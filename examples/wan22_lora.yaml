@@ -1,0 +1,68 @@
+name: my_concept
+
+model:
+  type: wan22
+  pretrained_path: /path/to/wan22-model
+
+lora:
+  rank: 16
+  alpha: 32
+  dropout: 0.0
+  target_modules:
+    - "attn"
+    - "mlp"
+  dual_lora: true           # single forward pass for high + low noise (~1.5x speedup)
+  high_noise_weight: 1.0
+  low_noise_weight: 1.0
+
+training:
+  max_steps: 2000
+  learning_rate: 1.0e-4
+  lr_warmup_steps: 100
+  lr_scheduler: cosine      # cosine | linear | constant | cosine_with_restarts | polynomial
+  target_vram_utilization: 0.92
+  seed: 42
+  save_every: 500
+  log_every: 10
+  ema: false
+  auto_stop: true
+  convergence_patience: 200
+  convergence_threshold: 0.01
+  keep_top_k_checkpoints: 3
+
+data:
+  data_dir: /path/to/videos
+  pin_memory: true
+  cache_latents: true
+  bucketing: true
+  bucket_no_upscale: true
+  max_resolution: 1024
+  min_resolution: 256
+  resolution_steps: 64
+  video_max_frames: 16
+  video_frame_stride: 1
+
+distributed:
+  fsdp:
+    auto_wrap: wan_optimized
+    min_params: 10000000
+    sharding_strategy: FULL_SHARD   # FULL_SHARD | SHARD_GRAD_OP | HYBRID_SHARD
+    cpu_offload: false
+  ddp:
+    find_unused_parameters: false
+    gradient_as_bucket_view: true
+    static_graph: true
+
+performance:
+  compile_mode: reduce-overhead     # reduce-overhead | max-autotune | default
+  selective_checkpointing: true
+  channels_last: true
+  fused_optimizer: true
+  vram_fragmentation_reduction: true
+
+logging:
+  backend: tensorboard              # tensorboard | wandb | both
+  output_dir: ./output/wan22_lora
+  log_dir: ./logs/wan22_lora
+  wandb_project: null               # set to enable WandB
+  profile_steps: 0                  # set > 0 to write Chrome trace to profile_output

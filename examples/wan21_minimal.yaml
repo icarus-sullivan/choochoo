@@ -1,0 +1,27 @@
+name: my_concept
+
+model:
+  type: wan21
+  pretrained_path: /path/to/Wan2.1-T2V-1.3B
+  # Also works with the 14B model:
+  # pretrained_path: Wan-AI/Wan2.1-T2V-14B-Diffusers
+
+data:
+  # Videos (.mp4 .mov .avi .mkv .webm) — one caption per video as a .txt file
+  # with the same name, or a metadata.jsonl with {"file_name": "...", "caption": "..."}.
+  #
+  # my-videos/
+  #   clip_001.mp4
+  #   clip_001.txt        ← "a dog running through a field"
+  #   clip_002.mp4
+  #   clip_002.txt
+  data_dir: /path/to/videos
+
+lora:
+  rank: 16
+  alpha: 32
+
+training:
+  max_steps: 2000
+  learning_rate: 1.0e-4
+  save_every: 500

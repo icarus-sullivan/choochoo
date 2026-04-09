@@ -1,0 +1,26 @@
+name: my_concept
+
+model:
+  type: wan22
+  pretrained_path: /path/to/wan22-model
+
+data:
+  # Videos (.mp4 .mov .avi .mkv .webm) — one caption per video as a .txt file
+  # with the same name, or a metadata.jsonl with {"file_name": "...", "caption": "..."}.
+  #
+  # my-videos/
+  #   clip_001.mp4
+  #   clip_001.txt        ← "a dog running through a field"
+  #   clip_002.mp4
+  #   clip_002.txt
+  #   metadata.jsonl      ← optional, takes precedence over .txt files
+  data_dir: /path/to/videos
+
+lora:
+  rank: 16
+  alpha: 32
+
+training:
+  max_steps: 2000
+  learning_rate: 1.0e-4
+  save_every: 500

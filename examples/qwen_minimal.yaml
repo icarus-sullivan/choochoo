@@ -1,0 +1,40 @@
+name: my_qwen
+
+model:
+  type: qwen
+  pretrained_path: /path/to/Qwen-Image
+
+data:
+  # Caption + image pairs. No source image needed — pure text-to-image.
+  #
+  #   my-images/
+  #     photo_001.png
+  #     photo_001.txt     ← "a golden retriever running on the beach"
+  #     photo_002.png
+  #     photo_002.txt
+  #
+  # Or a metadata.jsonl: {"file_name": "photo_001.png", "caption": "..."}
+  data_dir: /path/to/images
+  cache_latents: true     # pre-encode with VAE on first run (fast subsequent runs)
+
+lora:
+  rank: 16
+  alpha: 32
+
+training:
+  max_steps: 2000
+  learning_rate: 1.0e-4
+  save_every: 500
+
+logging:
+  output_dir: ./output/my_qwen
+
+sample:
+  sample_every: 500
+  steps: 20
+  width: 1024
+  height: 1024
+  seed: 42
+  prompts:
+    - "a golden retriever running on the beach"
+    - "a serene mountain lake at sunset"

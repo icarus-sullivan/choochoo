@@ -1,0 +1,62 @@
+name: my_edit
+
+model:
+  type: qwen_edit
+  pretrained_path: /path/to/qwen-image-edit
+
+lora:
+  rank: 32
+  alpha: 64
+  dropout: 0.05
+  target_modules:
+    - "attn"
+    - "mlp"
+
+training:
+  max_steps: 3000
+  learning_rate: 5.0e-5
+  lr_warmup_steps: 150
+  lr_scheduler: cosine
+  target_vram_utilization: 0.90
+  seed: 42
+  save_every: 500
+  log_every: 10
+  auto_stop: true
+  convergence_patience: 300
+  convergence_threshold: 0.01
+  keep_top_k_checkpoints: 3
+
+data:
+  data_dir: /path/to/edit-pairs
+  pin_memory: true
+  cache_latents: true
+  bucketing: true
+  bucket_no_upscale: true
+  max_resolution: 512
+  min_resolution: 256
+  resolution_steps: 64
+
+distributed:
+  fsdp:
+    auto_wrap: wan_optimized
+    min_params: 10000000
+    sharding_strategy: FULL_SHARD
+    cpu_offload: false
+  ddp:
+    find_unused_parameters: false
+    gradient_as_bucket_view: true
+    static_graph: true
+
+performance:
+  compile_mode: reduce-overhead
+  selective_checkpointing: true
+  channels_last: false              # Qwen uses NLP-style [B, T, D] layout
+  fused_optimizer: true
+  vram_fragmentation_reduction: true
+
+logging:
+  backend: tensorboard
+  output_dir: ./output/qwen_edit_lora
+  log_dir: ./logs/qwen_edit_lora
+  wandb_project: null
+  profile_steps: 0

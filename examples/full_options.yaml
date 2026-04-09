@@ -1,0 +1,463 @@
+# =============================================================================
+# choochoo — Full Options Reference
+# =============================================================================
+# Every supported configuration key is listed here with its default value and
+# a description of what it controls.
+#
+# You do NOT need to include most of these in your own config — any omitted key
+# falls back to its default automatically via deep-merge at load time.
+#
+# Keys marked [auto] are resolved at runtime by the AutoTuner based on your
+# hardware. You only need to set them if you want to override the auto-selected
+# value with a fixed value.
+#
+# Usage:
+#   python train.py --config examples/full_options.yaml
+# =============================================================================
+
+
+# REQUIRED — short identifier for this training run.
+# Used in all output filenames:
+#   WAN dual-LoRA:  wan-<name>-high-step<N>.safetensors
+#                   wan-<name>-low-step<N>.safetensors
+#   WAN single:     wan-<name>-step<N>.safetensors
+#   Qwen Edit:      qwen-<name>-step<N>.safetensors
+#   LTX-2:          ltx2-<name>-step<N>.safetensors
+# Allowed characters: letters, digits, hyphens, underscores.
+name: my_run
+
+
+# -----------------------------------------------------------------------------
+# MODEL
+# The pretrained model to fine-tune.
+# -----------------------------------------------------------------------------
+model:
+  # Which model backend to use.
+  # Options: wan22 | qwen_edit | ltx2
+  # Default: wan22
+  type: wan22
+
+  # Path to the pretrained model directory (HuggingFace-style or local).
+  # REQUIRED — no default.
+  pretrained_path: /path/to/model
+
+  # Weight dtype for the frozen model parameters.
+  # [auto] → bf16 on Ampere+ GPUs (sm>=8.0), fp16 otherwise, fp32 on CPU.
+  # Options: auto | bf16 | fp16 | fp32
+  # Default: auto
+  dtype: auto
+
+
+# -----------------------------------------------------------------------------
+# LORA
+# Low-Rank Adaptation settings.
+# -----------------------------------------------------------------------------
+lora:
+  # Number of rank dimensions for A and B matrices.
+  # Higher rank = more capacity but more VRAM and slower.
+  # Range: 1–512. Default: 16
+  rank: 16
+
+  # LoRA scaling factor. Effective scale = alpha / rank.
+  # Rule of thumb: set alpha = 2 * rank for standard scaling.
+  # Default: 32
+  alpha: 32
+
+  # Dropout applied to the LoRA input before the A matrix.
+  # 0.0 = no dropout. Mild regularisation: 0.05–0.10.
+  # Range: [0, 1). Default: 0.0
+  dropout: 0.0
+
+  # Module name patterns to inject LoRA into (substring or regex match).
+  # Default targets attention + MLP blocks.
+  # Default: ["attn", "mlp"]
+  target_modules:
+    - "attn"
+    - "mlp"
+
+  # Dual-LoRA mode: run one forward pass covering both high-noise and
+  # low-noise timestep regimes simultaneously. ~1.5–2x training speedup
+  # for WAN 2.2. Splits the batch in half internally.
+  # Default: false
+  dual_lora: false
+
+  # Loss weight for the high-noise branch (timesteps 800–1000) in dual mode.
+  # Default: 1.0
+  high_noise_weight: 1.0
+
+  # Loss weight for the low-noise branch (timesteps 0–200) in dual mode.
+  # Default: 1.0
+  low_noise_weight: 1.0
+
+
+# -----------------------------------------------------------------------------
+# TRAINING
+# Core training hyperparameters and loop controls.
+# -----------------------------------------------------------------------------
+training:
+  # Whether to run the AutoTuner before training to resolve all 'auto' values.
+  # Disabling skips batch-size search and hardware detection.
+  # Default: true
+  auto_tune: true
+
+  # Total number of optimiser steps.
+  # Default: 2000
+  max_steps: 2000
+
+  # Peak learning rate.
+  # Default: 1.0e-4
+  learning_rate: 1.0e-4
+
+  # Number of linear warmup steps from 0 → learning_rate.
+  # Default: 100
+  lr_warmup_steps: 100
+
+  # LR schedule shape after warmup.
+  # Options: cosine | linear | constant | cosine_with_restarts | polynomial
+  # Default: cosine
+  lr_scheduler: cosine
+
+  # Per-GPU batch size.
+  # [auto] → binary-searched to the largest value that fits in VRAM
+  #           at target_vram_utilization (or estimated statically on 24GB GPUs).
+  # Default: auto
+  batch_size: auto
+
+  # Micro-step gradient accumulation count.
+  # Effective batch = batch_size * gradient_accumulation_steps.
+  # [auto] → derived from batch_size to reach an effective batch of at least 16.
+  # Default: auto
+  gradient_accumulation_steps: auto
+
+  # Target VRAM utilisation fraction used when auto-tuning batch size.
+  # 0.92 leaves ~8% headroom for allocator overhead and fragmentation.
+  # Range: (0, 1). Default: 0.92
+  target_vram_utilization: 0.92
+
+  # AMP precision for the training forward+backward pass.
+  # [auto] → matches model.dtype.
+  # Options: auto | bf16 | fp16 | fp32
+  # Default: auto
+  mixed_precision: auto
+
+  # Base random seed. Rank-offset is added for distributed runs.
+  # Default: 42
+  seed: 42
+
+  # Save a checkpoint every N steps.
+  # Default: 500
+  save_every: 500
+
+  # Log metrics every N steps.
+  # Default: 10
+  log_every: 10
+
+  # Maintain an Exponential Moving Average copy of LoRA weights.
+  # EMA weights are saved alongside regular weights in checkpoints.
+  # Default: false
+  ema: false
+
+  # EMA decay rate (only used when ema: true).
+  # Higher = slower EMA update; 0.9999 is standard for diffusion.
+  # Default: 0.9999
+  ema_decay: 0.9999
+
+  # Automatically stop training when convergence is detected.
+  # See convergence_patience and convergence_threshold below.
+  # Default: false
+  auto_stop: false
+
+  # Number of steps without sufficient loss improvement before triggering
+  # auto-stop (if auto_stop: true) or issuing a convergence warning.
+  # Default: 200
+  convergence_patience: 200
+
+  # Minimum fractional loss improvement to count as "progress".
+  # E.g. 0.01 = less than 1% improvement over the window → plateau.
+  # Default: 0.01
+  convergence_threshold: 0.01
+
+  # Number of best checkpoints to keep (ranked by loss).
+  # Older regular checkpoints are rotated out; tagged ones (best, final) are kept.
+  # Default: 3
+  keep_top_k_checkpoints: 3
+
+
+# -----------------------------------------------------------------------------
+# DATA
+# Dataset location and loading configuration.
+# -----------------------------------------------------------------------------
+data:
+  # Root directory containing training data.
+  # REQUIRED — no default.
+  data_dir: /path/to/data
+
+  # Number of DataLoader worker processes.
+  # [auto] → min(cpu_cores // 2, 12).
+  # Default: auto
+  num_workers: auto
+
+  # Number of batches to prefetch per worker.
+  # [auto] → 4 if RAM > 32 GB, else 2.
+  # Default: auto
+  prefetch_factor: auto
+
+  # Pin DataLoader memory for faster CPU→GPU transfers.
+  # Default: true
+  pin_memory: true
+
+  # Keep worker processes alive between epochs (avoids fork overhead).
+  # Default: true
+  persistent_workers: true
+
+  # Pre-encode images/videos to VAE latents and cache them to disk.
+  # Eliminates redundant VAE encode passes across epochs (large speedup).
+  # Default: true
+  cache_latents: true
+
+  # Directory to write/read cached latents.
+  # null = auto-create a cache/ subdirectory inside logging.output_dir.
+  # Default: null
+  cache_dir: null
+
+  # Group samples by resolution into buckets to avoid padding waste.
+  # All samples in a batch share the same (H, W).
+  # Default: true
+  bucketing: true
+
+  # Never upscale images to fill a bucket — only downscale.
+  # Prevents quality loss from upsampling small images.
+  # Default: true
+  bucket_no_upscale: true
+
+  # Largest supported resolution (used to generate bucket grid).
+  # Default: 1024
+  max_resolution: 1024
+
+  # Smallest supported resolution.
+  # Default: 256
+  min_resolution: 256
+
+  # Bucket grid step size in pixels (buckets are multiples of this).
+  # Default: 64
+  resolution_steps: 64
+
+  # Maximum number of frames to load from each video clip (WAN / LTX-2).
+  # Default: 64
+  video_max_frames: 64
+
+  # Frame sampling stride for videos (1 = every frame, 2 = every other, etc.).
+  # Default: 1
+  video_frame_stride: 1
+
+  # How many times to repeat the dataset per training run.
+  # [auto] → max(1, max_steps // dataset_size), capped at 1000.
+  # Default: auto
+  repeat_dataset: auto
+
+
+# -----------------------------------------------------------------------------
+# DISTRIBUTED
+# Multi-GPU and multi-node training strategy.
+# -----------------------------------------------------------------------------
+distributed:
+  # Which parallelism strategy to use.
+  # [auto] → single on 1 GPU; DDP on 2–4 GPUs; FSDP on 5+ or large models.
+  # Options: auto | single | ddp | fsdp | deepspeed
+  # Default: auto
+  strategy: auto
+
+  # FSDP (Fully Sharded Data Parallel) sub-options.
+  # Only active when strategy is fsdp.
+  fsdp:
+    # Wrapping policy for FSDP sharding.
+    # wan_optimized: detects DiT block classes and wraps at block level,
+    #               avoiding over-sharding small utility layers.
+    # Options: wan_optimized | size_based
+    # Default: wan_optimized
+    auto_wrap: wan_optimized
+
+    # Minimum parameter count for a module to be wrapped by FSDP.
+    # Modules smaller than this stay un-sharded (reduces comm overhead).
+    # Default: 10000000  (10M)
+    min_params: 10000000
+
+    # FSDP sharding strategy.
+    # FULL_SHARD: shards parameters, gradients, and optimizer states (max savings).
+    # SHARD_GRAD_OP: shards only gradients and optimizer states (faster comms).
+    # HYBRID_SHARD: full shard within a node, replicate across nodes.
+    # Options: FULL_SHARD | SHARD_GRAD_OP | NO_SHARD | HYBRID_SHARD
+    # Default: FULL_SHARD
+    sharding_strategy: FULL_SHARD
+
+    # Offload sharded parameters to CPU to save GPU VRAM.
+    # Significant performance cost — use only if model doesn't fit in VRAM.
+    # Default: false
+    cpu_offload: false
+
+  # DDP (DistributedDataParallel) sub-options.
+  # Only active when strategy is ddp.
+  ddp:
+    # Detect and handle parameters that don't receive gradients.
+    # false is correct for LoRA (frozen params still participate via chain rule).
+    # Default: false
+    find_unused_parameters: false
+
+    # Allocate gradient tensors as views into the all-reduce bucket.
+    # Reduces peak memory by 1 gradient copy.
+    # Default: true
+    gradient_as_bucket_view: true
+
+    # Mark the computation graph as static (no dynamic control flow per step).
+    # Enables DDP internal optimisations; safe for standard LoRA training.
+    # Default: true
+    static_graph: true
+
+
+# -----------------------------------------------------------------------------
+# PERFORMANCE
+# Kernel-level and runtime speed optimisations.
+# -----------------------------------------------------------------------------
+performance:
+  # Compile the model with torch.compile before training.
+  # [auto] → benchmarks compiled vs uncompiled; enables only if ≥2% faster.
+  # Options: auto | true | false
+  # Default: auto
+  compile: auto
+
+  # torch.compile mode (only used when compile is enabled).
+  # reduce-overhead: minimises Python overhead via CUDA graphs (recommended).
+  # max-autotune: full kernel autotuning (slower compile, fastest runtime).
+  # default: baseline compilation.
+  # Options: reduce-overhead | max-autotune | default
+  # Default: reduce-overhead
+  compile_mode: reduce-overhead
+
+  # Use FlashAttention-2 kernel for attention layers.
+  # [auto] → enabled if flash_attn is installed and GPU is sm>=8.0.
+  # Options: auto | true | false
+  # Default: auto
+  flash_attention: auto
+
+  # Use xFormers memory-efficient attention.
+  # [auto] → enabled if xformers is installed.
+  # Options: auto | true | false
+  # Default: auto
+  xformers: auto
+
+  # Enable activation (gradient) checkpointing to trade compute for memory.
+  # [auto] → enabled when GPU VRAM < 40 GB.
+  # Options: auto | true | false
+  # Default: auto
+  gradient_checkpointing: auto
+
+  # Only checkpoint the largest DiT/attention blocks, not every layer.
+  # More efficient than global checkpointing — saves most memory at lower
+  # recompute cost. Requires gradient_checkpointing to be enabled.
+  # Default: true
+  selective_checkpointing: true
+
+  # Store activations in channels-last (NHWC) memory format.
+  # Faster on Ampere+ for CNN-style operations; not suitable for NLP layouts.
+  # Default: true
+  channels_last: true
+
+  # Use fused AdamW kernel (PyTorch 2.x, CUDA only).
+  # Faster than standard AdamW by fusing per-parameter loops into one kernel.
+  # Default: true
+  fused_optimizer: true
+
+  # Apply allocator settings that reduce VRAM fragmentation for long DiT runs.
+  # Sets PYTORCH_CUDA_ALLOC_CONF and clears the allocator after each checkpoint.
+  # Default: true
+  vram_fragmentation_reduction: true
+
+
+# -----------------------------------------------------------------------------
+# LOGGING
+# Metrics, checkpoints, and profiling output.
+# -----------------------------------------------------------------------------
+logging:
+  # Metrics logging backend.
+  # Options: tensorboard | wandb | both
+  # Default: tensorboard
+  backend: tensorboard
+
+  # WandB project name. Set to enable WandB logging (requires `wandb` package).
+  # Default: null (disabled)
+  wandb_project: null
+
+  # WandB run name. null = auto-generated by WandB.
+  # Default: null
+  wandb_run_name: null
+
+  # Root directory for model checkpoints and exported LoRA weights.
+  # Default: ./output
+  output_dir: ./output
+
+  # Directory for TensorBoard event files and WandB local cache.
+  # Default: ./logs
+  log_dir: ./logs
+
+  # Number of steps to capture with the PyTorch profiler at the start of
+  # training. Writes a Chrome-compatible trace to profile_output.
+  # 0 = disabled.
+  # Default: 0
+  profile_steps: 0
+
+  # Directory to write PyTorch profiler traces (only used when profile_steps > 0).
+  # Default: ./profiler
+  profile_output: ./profiler
+
+
+# -----------------------------------------------------------------------------
+# SAMPLE
+# Generate inference samples during training to monitor LoRA quality.
+# Samples are saved to <logging.output_dir>/samples/.
+# Omit this section entirely to disable sampling.
+# Skipped automatically for wan_i2v (requires source frame).
+# -----------------------------------------------------------------------------
+sample:
+  # Set false to disable without removing prompts.
+  # Default: true
+  enabled: true
+
+  # Generate samples every N steps.
+  # null = use training.save_every.
+  # Default: null
+  sample_every: null
+
+  # Number of denoising steps (fast preview quality, not production).
+  # Default: 20
+  steps: 20
+
+  # Output resolution.
+  # Default: 480
+  width: 480
+  height: 480
+
+  # Number of video frames to generate (WAN / LTX-2 only).
+  # Default: 42
+  num_frames: 42
+
+  # Classifier-free guidance scale.
+  # Default: 4.0
+  cfg: 4.0
+
+  # RNG seed for reproducible samples across checkpoints.
+  # Default: 42
+  seed: 42
+
+  # Prompts to generate. One output file per prompt per sample step.
+  # Videos: sample_00_<step>.mp4, sample_01_<step>.mp4, ...
+  # Images: sample_00_<step>.png, sample_01_<step>.png, ...
+  prompts:
+    - "a cat sitting on a sofa"
+    - "beautiful sunset over mountains"
+
+  # (qwen_edit only) Optional source images paired with prompts by index.
+  # A black image of sample width x height is used when omitted or null.
+  # Default: []
+  images:
+    - /path/to/source_image_0.png
+    - /path/to/source_image_1.png
