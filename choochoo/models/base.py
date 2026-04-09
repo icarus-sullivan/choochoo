@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BaseModelAdapter(ABC):
@@ -50,6 +53,55 @@ class BaseModelAdapter(ABC):
     def get_trainable_params(self):
         """Return parameters that require grad (LoRA only by default)."""
         return [p for p in self.model.parameters() if p.requires_grad]
+
+    def detect_lora_targets(self) -> list:
+        """Walk the loaded model and return patterns that match Linear layers.
+
+        Uses broad diffusion-model patterns (attention projections, FFN layers)
+        and filters to only those that actually exist in this model's architecture.
+        Called automatically by inject_lora — no config needed.
+        """
+        import re
+
+        patterns = [
+            r".*to_q",
+            r".*to_k",
+            r".*to_v",
+            r".*to_out\.0",
+            r".*add_q_proj",
+            r".*add_k_proj",
+            r".*add_v_proj",
+            r".*to_add_out",
+            r".*ff\.net\.\d+\.proj",
+            r".*img_mlp",
+            r".*txt_mlp",
+        ]
+
+        linear_layers = [
+            name for name, module in self.model.named_modules()
+            if isinstance(module, nn.Linear)
+        ]
+
+        matched = {p: [] for p in patterns}
+        for name in linear_layers:
+            for p in patterns:
+                if re.match(p, name):
+                    matched[p].append(name)
+
+        active_patterns = [p for p, hits in matched.items() if hits]
+
+        logger.info("=== LoRA Target Detection ===")
+        for p, hits in matched.items():
+            if hits:
+                logger.info(f"  {p:35s} -> {len(hits)} layers")
+        logger.info(f"  Total Linear layers:   {len(linear_layers)}")
+        logger.info(f"  Active LoRA patterns:  {len(active_patterns)}")
+
+        total_hits = sum(len(v) for v in matched.values())
+        if total_hits < 20:
+            logger.warning("Very low LoRA coverage — check target patterns!")
+
+        return active_patterns
 
     def get_collate_fn(self):
         """Return a custom batch collate function, or None for PyTorch default.

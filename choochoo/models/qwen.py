@@ -112,16 +112,6 @@ class QwenAdapter(BaseModelAdapter):
     packing, RoPE, and flow-matching schedule as Qwen-Image-Edit.
     """
 
-    DEFAULT_LORA_TARGETS = [
-        # Image stream attention
-        r"attn\.to_q", r"attn\.to_k", r"attn\.to_v", r"attn\.to_out",
-        # Text stream attention (MMDiT add_ projections)
-        r"attn\.add_q_proj", r"attn\.add_k_proj", r"attn\.add_v_proj", r"attn\.to_add_out",
-        # Image stream FFN
-        r"img_mlp\.net\.0\.proj", r"img_mlp\.net\.2",
-        # Text stream FFN
-        r"txt_mlp\.net\.0\.proj", r"txt_mlp\.net\.2",
-    ]
 
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
@@ -181,8 +171,7 @@ class QwenAdapter(BaseModelAdapter):
         self._lora_injector = injector
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")
-        target_modules = list(self.cfg.lora.get("target_modules", None) or self.DEFAULT_LORA_TARGETS)
-        injector.target_modules = target_modules
+        injector.target_modules = self.detect_lora_targets()
         injector.inject(self.model)
         logger.info(
             f"Qwen Image LoRA injected: {injector.num_injected()} layers, "

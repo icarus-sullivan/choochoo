@@ -147,7 +147,7 @@ class WANDualAdapter(WANAdapter):
             raise RuntimeError("Call load_model() before inject_lora()")
 
         target_modules = list(self.cfg.lora.target_modules)
-        injector.target_modules = target_modules
+        injector.target_modules = self.detect_lora_targets()
 
         # High-noise LoRA
         injector.inject(self._high_transformer)

@@ -172,13 +172,6 @@ class WANAdapter(BaseModelAdapter):
     """
 
     # Actual diffusers WanTransformer3DModel layer names
-    DEFAULT_LORA_TARGETS = [
-        # Self-attention (attn1) and cross-attention (attn2)
-        r"attn1\.to_q", r"attn1\.to_k", r"attn1\.to_v", r"attn1\.to_out",
-        r"attn2\.to_q", r"attn2\.to_k", r"attn2\.to_v", r"attn2\.to_out",
-        # FFN — WanTransformerBlock names the feedforward module 'ffn', not 'ff'
-        r"ffn\.net\.0\.proj", r"ffn\.net\.2",
-    ]
 
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
@@ -247,8 +240,7 @@ class WANAdapter(BaseModelAdapter):
         """Inject LoRA into attention and MLP layers of the DiT."""
         self._lora_injector = injector
 
-        target_modules = list(self.cfg.lora.get("target_modules", None) or self.DEFAULT_LORA_TARGETS)
-        injector.target_modules = target_modules
+        injector.target_modules = self.detect_lora_targets()
 
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")
