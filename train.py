@@ -312,7 +312,10 @@ def main() -> None:
 
     # Compile if beneficial — skip for models with trust_remote_code custom ops
     # that don't trace cleanly through torch.compile's dynamo frontend.
-    _no_compile_types = {"qwen_edit"}
+    # qwen/qwen_edit produce variable-length sequences from bucketed data, causing
+    # CUDAGraph thrashing under reduce-overhead mode (9+ distinct shapes → full
+    # recompile per step, far slower than eager).
+    _no_compile_types = {"qwen_edit", "qwen"}
     if cfg.performance.compile and cfg.model.type not in _no_compile_types:
         if dist_setup.rank == 0:
             logger.info("torch.compile: enabled (mode=reduce-overhead)")
@@ -325,7 +328,7 @@ def main() -> None:
         except Exception as e:
             logger.warning(f"torch.compile failed: {e}")
     elif cfg.model.type in _no_compile_types:
-        logger.info("torch.compile: skipped for %s (trust_remote_code model)", cfg.model.type)
+        logger.info("torch.compile: skipped for %s (variable-length sequences incompatible with CUDAGraphs)", cfg.model.type)
 
     # VAE and text_encoder are on CPU from pre-encoding (moved back by pipeline).
     # They stay in CPU memory for use by the training-time sampler.
