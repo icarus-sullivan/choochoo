@@ -141,9 +141,9 @@ class Trainer:
         # Convergence detector
         self.convergence = ConvergenceDetector(
             patience=int(cfg_t.get("convergence_patience", 200)),
-            threshold=float(cfg_t.get("convergence_threshold", 0.01)),
             keep_top_k=int(cfg_t.get("keep_top_k_checkpoints", 3)),
             auto_stop=bool(cfg_t.get("auto_stop", False)),
+            warmup_steps=int(cfg_t.get("lr_warmup_steps", 0)),
         )
 
         # Profiler
@@ -272,6 +272,15 @@ class Trainer:
                     phase=phase,
                     wall_time=time.time(),
                     grad_norm=metrics.get("grad_norm"),
+                )
+                self.sqlite_writer.log_convergence(
+                    step=step + 1,
+                    is_best=state.is_best,
+                    best_loss=self.convergence._best_loss if self.convergence._best_loss != float("inf") else None,
+                    best_step=self.convergence._best_step,
+                    steps_since_best=state.steps_since_best,
+                    plateau=state.plateau_detected,
+                    overfit=state.overfit_detected,
                 )
 
             # Logging

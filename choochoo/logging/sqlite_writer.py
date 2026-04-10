@@ -28,6 +28,7 @@ class TrainingPhase(str, Enum):
 
 _STOP = object()  # sentinel to shut down the worker thread
 _META = object()  # sentinel for run_meta writes
+_CONV = object()  # sentinel for convergence writes
 
 
 class SQLiteMetricsWriter:
@@ -63,6 +64,20 @@ class SQLiteMetricsWriter:
         """Enqueue a metrics row. Returns immediately (non-blocking)."""
         self._queue.put((step, float(loss), float(lr), phase.value, wall_time, grad_norm, extras))
 
+    def log_convergence(
+        self,
+        step: int,
+        is_best: bool,
+        best_loss: Optional[float],
+        best_step: int,
+        steps_since_best: int,
+        plateau: bool,
+        overfit: bool,
+    ) -> None:
+        """Enqueue a convergence state row. Non-blocking."""
+        self._queue.put((_CONV, step, int(is_best), best_loss, best_step,
+                         steps_since_best, int(plateau), int(overfit)))
+
     def write_meta(self, key: str, value: str) -> None:
         """Enqueue a run_meta key/value write. Returns immediately (non-blocking)."""
         self._queue.put((_META, key, value))
@@ -93,6 +108,17 @@ class SQLiteMetricsWriter:
                 value TEXT
             )
         """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS convergence (
+                step             INTEGER PRIMARY KEY,
+                is_best          INTEGER NOT NULL,
+                best_loss        REAL,
+                best_step        INTEGER,
+                steps_since_best INTEGER,
+                plateau          INTEGER NOT NULL,
+                overfit          INTEGER NOT NULL
+            )
+        """)
         con.commit()
 
         while True:
@@ -109,6 +135,18 @@ class SQLiteMetricsWriter:
                     con.commit()
                 except Exception:
                     logger.exception("SQLiteMetricsWriter: failed to write meta key=%s", key)
+                continue
+
+            if isinstance(item, tuple) and item[0] is _CONV:
+                _, step, is_best, best_loss, best_step, steps_since_best, plateau, overfit = item
+                try:
+                    con.execute(
+                        "INSERT OR REPLACE INTO convergence VALUES (?,?,?,?,?,?,?)",
+                        (step, is_best, best_loss, best_step, steps_since_best, plateau, overfit),
+                    )
+                    con.commit()
+                except Exception:
+                    logger.exception("SQLiteMetricsWriter: failed to write convergence step %d", step)
                 continue
 
             step, loss, lr, phase, wall_time, grad_norm, extras = item
