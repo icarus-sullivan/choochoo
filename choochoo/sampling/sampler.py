@@ -64,10 +64,10 @@ class TrainingSampler:
         mime = result["mime"]
         data = result["data"]
         if mime == "video/mp4":
-            path = self.samples_dir / f"sample_{idx:02d}_{step}.mp4"
+            path = self.samples_dir / f"sample_{step:09d}_{idx:02d}.mp4"
             self._save_video(data, path)
         elif mime == "image/png":
-            path = self.samples_dir / f"sample_{idx:02d}_{step}.png"
+            path = self.samples_dir / f"sample_{step:09d}_{idx:02d}.png"
             data.save(path)
             logger.info("Saved sample: %s", path)
         else:
