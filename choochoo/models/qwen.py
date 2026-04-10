@@ -167,6 +167,55 @@ class QwenAdapter(BaseModelAdapter):
         logger.info(f"Qwen Image loaded: {self.param_count/1e9:.2f}B params")
         return self.model
 
+    def detect_lora_targets(self) -> list:
+        """Qwen-specific LoRA target detection — attention projections only.
+
+        MLP and conv targets are intentionally excluded to keep LoRA file sizes small.
+        Comment back in to re-enable.
+        """
+        import re
+
+        patterns = [
+            r".*to_q",
+            r".*to_k",
+            r".*to_v",
+            r".*to_out\.0",
+            r".*add_q_proj",
+            r".*add_k_proj",
+            r".*add_v_proj",
+            r".*to_add_out",
+            # r".*ff\.net\.\d+\.proj",  # MLP feed-forward — excluded (oversaves)
+            # r".*img_mlp",              # Image MLP — excluded (oversaves)
+            # r".*txt_mlp",              # Text MLP — excluded (oversaves)
+            # Conv2d layers are not walked: detect_lora_targets only iterates nn.Linear
+        ]
+
+        linear_layers = [
+            name for name, module in self.model.named_modules()
+            if isinstance(module, nn.Linear)
+        ]
+
+        matched = {p: [] for p in patterns}
+        for name in linear_layers:
+            for p in patterns:
+                if re.search(p, name):
+                    matched[p].append(name)
+
+        active_patterns = [p for p, hits in matched.items() if hits]
+
+        logger.info("=== Qwen LoRA Target Detection ===")
+        for p, hits in matched.items():
+            if hits:
+                logger.info(f"  {p:35s} -> {len(hits)} layers")
+        logger.info(f"  Total Linear layers:   {len(linear_layers)}")
+        logger.info(f"  Active LoRA patterns:  {len(active_patterns)}")
+
+        total_hits = sum(len(v) for v in matched.values())
+        if total_hits < 20:
+            logger.warning("Very low LoRA coverage — check target patterns!")
+
+        return active_patterns
+
     def inject_lora(self, injector: Any) -> None:
         self._lora_injector = injector
         if self.model is None:
