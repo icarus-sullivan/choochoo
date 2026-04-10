@@ -54,6 +54,14 @@ class BaseModelAdapter(ABC):
         """Return parameters that require grad (LoRA only by default)."""
         return [p for p in self.model.parameters() if p.requires_grad]
 
+    def _resolve_target_modules(self) -> List[str]:
+        """Return LoRA target patterns with priority: config override > auto-detection."""
+        cfg_targets = self.cfg.lora.get("target_modules", None)
+        if cfg_targets:
+            logger.info("Using config-specified LoRA target_modules")
+            return list(cfg_targets)
+        return self.detect_lora_targets()
+
     def detect_lora_targets(self) -> list:
         """Walk the loaded model and return patterns that match Linear layers.
 

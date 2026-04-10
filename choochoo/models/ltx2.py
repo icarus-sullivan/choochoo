@@ -54,7 +54,7 @@ class LTX2Adapter(BaseModelAdapter):
     def inject_lora(self, injector: Any) -> None:
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")
-        injector.target_modules = self.detect_lora_targets()
+        injector.target_modules = self._resolve_target_modules()
         injector.inject(self.model)
         logger.info(f"LTX-2 LoRA injected: {injector.num_injected()} layers")
 

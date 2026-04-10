@@ -146,8 +146,7 @@ class WANDualAdapter(WANAdapter):
         if self._high_transformer is None or self._low_transformer is None:
             raise RuntimeError("Call load_model() before inject_lora()")
 
-        target_modules = list(self.cfg.lora.target_modules)
-        injector.target_modules = self.detect_lora_targets()
+        injector.target_modules = self._resolve_target_modules()
 
         # High-noise LoRA
         injector.inject(self._high_transformer)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -10,12 +11,17 @@ import torch.nn as nn
 
 from .layers import LoRAConv2d, LoRALinear
 
+logger = logging.getLogger(__name__)
+
 
 class LoRAInjector:
     """Inject LoRA adapters into a model's target modules.
 
-    Supports selective targeting via module name patterns (regex or substring),
+    Supports selective targeting via module name patterns (regex),
     and dual-LoRA mode for combined high/low-noise training.
+
+    target_modules may be left empty at construction and assigned by the
+    adapter's inject_lora() before calling inject().
     """
 
     def __init__(
@@ -30,26 +36,34 @@ class LoRAInjector:
         self.rank = rank
         self.alpha = alpha
         self.dropout = dropout
-        self.target_modules = target_modules or ["attn", "mlp"]
+        self.target_modules = target_modules or []
         self.exclude_modules = exclude_modules or []
         self.dual = dual
         self._injected: Dict[str, nn.Module] = {}
+        # Compiled in inject() after target_modules is finalised by the adapter.
+        self._compiled_patterns: List[re.Pattern] = []
+        self._compiled_excludes: List[re.Pattern] = []
 
     def _should_target(self, name: str, module: nn.Module) -> bool:
         if not isinstance(module, (nn.Linear, nn.Conv2d)):
             return False
-        # Check exclusions first
-        for exc in self.exclude_modules:
-            if exc in name or re.search(exc, name):
+        for pat in self._compiled_excludes:
+            if pat.search(name):
                 return False
-        # Check inclusions
-        for pat in self.target_modules:
-            if pat in name or re.search(pat, name):
+        for pat in self._compiled_patterns:
+            if pat.search(name):
                 return True
         return False
 
     def inject(self, model: nn.Module) -> nn.Module:
         """Replace targeted layers with LoRA wrappers. Returns modified model."""
+        if not self.target_modules:
+            raise ValueError("target_modules must be set before calling inject()")
+
+        # (Re)compile — target_modules is typically assigned by the adapter after __init__
+        self._compiled_patterns = [re.compile(p) for p in self.target_modules]
+        self._compiled_excludes = [re.compile(p) for p in self.exclude_modules]
+
         self._injected.clear()
         replacements: List[Tuple[nn.Module, str, nn.Module]] = []
 
@@ -79,6 +93,22 @@ class LoRAInjector:
 
         for parent, attr, lora_layer in replacements:
             setattr(parent, attr, lora_layer)
+
+        if not self._injected:
+            raise RuntimeError("LoRA injection failed: no modules matched any target pattern")
+
+        # Per-pattern hit logging
+        pattern_hits = {p: 0 for p in self.target_modules}
+        for name in self._injected:
+            for i, pat in enumerate(self._compiled_patterns):
+                if pat.search(name):
+                    pattern_hits[self.target_modules[i]] += 1
+                    break
+        logger.info("=== LoRA Injection ===")
+        for pattern, count in pattern_hits.items():
+            if count:
+                logger.info("  %-40s -> %d layers", pattern, count)
+        logger.info("  Total injected: %d", len(self._injected))
 
         return model
 

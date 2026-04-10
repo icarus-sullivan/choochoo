@@ -240,7 +240,7 @@ class WANAdapter(BaseModelAdapter):
         """Inject LoRA into attention and MLP layers of the DiT."""
         self._lora_injector = injector
 
-        injector.target_modules = self.detect_lora_targets()
+        injector.target_modules = self._resolve_target_modules()
 
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")

@@ -222,7 +222,6 @@ def main() -> None:
         rank=int(cfg.lora.rank),
         alpha=float(cfg.lora.alpha),
         dropout=float(cfg.lora.dropout),
-        target_modules=adapter.detect_lora_targets(),
         dual=bool(cfg.lora.get("dual_lora", False)),
     )
     adapter.inject_lora(injector)

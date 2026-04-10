@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import torch
 import torch.nn as nn
@@ -202,6 +203,8 @@ class CheckpointManager:
                 k: v.float().contiguous()
                 for k, v in low_injector.get_lora_state_dict().items()
             }
+            self._validate_lora_save(injector, high_sd, label="high_noise")
+            self._validate_lora_save(low_injector, low_sd, label="low_noise")
             if self._comfyui_prefix:
                 high_sd = {"diffusion_model." + k: v for k, v in high_sd.items()}
                 low_sd = {"diffusion_model." + k: v for k, v in low_sd.items()}
@@ -222,6 +225,7 @@ class CheckpointManager:
         # --- Legacy dual_lora (single transformer, two LoRA paths via lora_A2/B2 keys) ---
         state_dict = injector.get_lora_state_dict()
         state_dict = {k: v.float().contiguous() for k, v in state_dict.items()}
+        self._validate_lora_save(injector, state_dict)
         if self._comfyui_prefix:
             state_dict = {"diffusion_model." + k: v for k, v in state_dict.items()}
 
@@ -245,6 +249,52 @@ class CheckpointManager:
             if write_toplevel:
                 save_file(state_dict, str(self.output_dir / fname), metadata=base_meta)
             logger.debug("Saved LoRA: %s", fname)
+
+    @staticmethod
+    def _validate_lora_save(injector: Any, state_dict: dict, label: str = "") -> None:
+        """Validate that a LoRA state dict fully covers all injected modules.
+
+        Checks:
+          C — state dict is non-empty and has at least 2 tensors per injected module
+          A — every injected module name appears in the saved keys
+          D — logs a coverage summary
+        """
+        tag = f" ({label})" if label else ""
+        n = len(state_dict)
+
+        # Check C: non-empty and minimum tensor count
+        if n == 0:
+            raise RuntimeError(
+                f"Saving empty LoRA state_dict{tag} — injection likely failed"
+            )
+        expected_min = injector.num_injected() * 2  # lora_A.weight + lora_B.weight per module
+        if n < expected_min:
+            raise RuntimeError(
+                f"Incomplete LoRA save{tag}: expected at least {expected_min} tensors, got {n}"
+            )
+
+        # Check A: every injected module has saved keys
+        injected_set: Set[str] = set(injector.injected_names())
+        saved_modules: Set[str] = set()
+        for k in state_dict:
+            # Strip the trailing .lora_A.weight / .lora_B2.weight suffix to get module name
+            base = re.sub(r"\.(lora_[AB]2?)(\.weight)?$", "", k)
+            saved_modules.add(base)
+        missing = injected_set - saved_modules
+        extra = saved_modules - injected_set
+        if missing:
+            raise RuntimeError(f"LoRA save{tag} missing modules: {missing}")
+        if extra:
+            logger.warning("Unexpected LoRA modules in save%s (not injected): %s", tag, extra)
+
+        # Check D: coverage summary
+        logger.info(
+            "LoRA Save Summary%s: injected=%d modules, saved=%d tensors, coverage=%.0f%%",
+            tag,
+            injector.num_injected(),
+            n,
+            n / max(expected_min, 1) * 100,
+        )
 
     def _save_full_model(self, model: nn.Module, directory: Path) -> None:
         state_dict = {k: v.cpu().float().contiguous() for k, v in model.state_dict().items()}

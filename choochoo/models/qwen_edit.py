@@ -203,7 +203,7 @@ class QwenEditAdapter(BaseModelAdapter):
         self._lora_injector = injector
         if self.model is None:
             raise RuntimeError("Call load_model() before inject_lora()")
-        injector.target_modules = self.detect_lora_targets()
+        injector.target_modules = self._resolve_target_modules()
         injector.inject(self.model)
         logger.info(
             f"Qwen Edit LoRA injected: {injector.num_injected()} layers, "
