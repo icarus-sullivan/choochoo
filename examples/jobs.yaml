@@ -1,0 +1,33 @@
+# choochoo training queue
+#
+# Run with:
+#   python queue.py --jobs examples/jobs.yaml
+#   python queue.py --jobs examples/jobs.yaml --dry-run       # validate only
+#   python queue.py --jobs examples/jobs.yaml --start-from 2  # skip job 1
+#
+# Each job requires a `config` (absolute path to a training YAML).
+# All other keys are optional overrides that map to train.py CLI flags:
+#
+#   max_steps       → --max-steps
+#   output_dir      → --output-dir
+#   data_dir        → --data-dir
+#   pretrained_path → --pretrained-path
+#   resume          → --resume
+#   log_level       → --log-level
+#   no_auto_tune    → --no-auto-tune  (set to true to enable)
+
+jobs:
+  # Minimal — just a config path
+  - config: /path/to/configs/concept_a.yaml
+
+  # Override max steps and output directory for this run
+  - config: /path/to/configs/concept_b.yaml
+    max_steps: 1000
+    output_dir: /path/to/output/concept_b
+
+  # Override multiple fields
+  - config: /path/to/configs/concept_c.yaml
+    data_dir: /path/to/data/concept_c
+    pretrained_path: /path/to/models/wan22
+    max_steps: 3000
+    output_dir: /path/to/output/concept_c
