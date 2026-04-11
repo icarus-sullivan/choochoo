@@ -236,6 +236,49 @@ class WANAdapter(BaseModelAdapter):
 
         return model
 
+    def detect_lora_targets(self) -> list:
+        """WAN-specific LoRA target detection — 1:1 with official DiffSynth targets.
+
+        Official targets: q, k, v, o, ffn.0, ffn.2
+        Applies to Wan2.1 T2V, Wan2.2 T2V/I2V, and WANi2vAdapter (subclass).
+        """
+        import re
+
+        patterns = [
+            r".*\.q$",      # attention query
+            r".*\.k$",      # attention key
+            r".*\.v$",      # attention value
+            r".*\.o$",      # attention output
+            r".*\.ffn\.0$", # feed-forward input projection
+            r".*\.ffn\.2$", # feed-forward output projection
+        ]
+
+        linear_layers = [
+            name for name, module in self.model.named_modules()
+            if isinstance(module, nn.Linear)
+        ]
+
+        matched = {p: [] for p in patterns}
+        for name in linear_layers:
+            for p in patterns:
+                if re.search(p, name):
+                    matched[p].append(name)
+
+        active_patterns = [p for p, hits in matched.items() if hits]
+
+        logger.info("=== WAN LoRA Target Detection ===")
+        for p, hits in matched.items():
+            if hits:
+                logger.info(f"  {p:35s} -> {len(hits)} layers")
+        logger.info(f"  Total Linear layers:   {len(linear_layers)}")
+        logger.info(f"  Active LoRA patterns:  {len(active_patterns)}")
+
+        total_hits = sum(len(v) for v in matched.values())
+        if total_hits < 20:
+            logger.warning("Very low LoRA coverage — check target patterns!")
+
+        return active_patterns
+
     def inject_lora(self, injector: Any) -> None:
         """Inject LoRA into attention and MLP layers of the DiT."""
         self._lora_injector = injector

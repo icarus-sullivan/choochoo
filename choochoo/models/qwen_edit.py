@@ -214,6 +214,52 @@ class QwenEditAdapter(BaseModelAdapter):
             f"{self.param_count/1e9:.2f}B total"
         )
 
+    def detect_lora_targets(self) -> list:
+        """Qwen Edit LoRA target detection — mirrors qwen.py, 1:1 with official DiffSynth targets."""
+        import re
+
+        patterns = [
+            r".*to_q",
+            r".*to_k",
+            r".*to_v",
+            r".*to_out\.0",
+            r".*add_q_proj",
+            r".*add_k_proj",
+            r".*add_v_proj",
+            r".*to_add_out",
+            r".*img_mlp\.net\.2",      # Image MLP output projection (per official)
+            r".*txt_mlp\.net\.2",      # Text MLP output projection (per official)
+            r".*img_mod\.1",           # Image modulation — index 1 (per official)
+            r".*txt_mod\.1",           # Text modulation — index 1 (per official)
+            # Conv2d layers are not walked: detect_lora_targets only iterates nn.Linear
+        ]
+
+        linear_layers = [
+            name for name, module in self.model.named_modules()
+            if isinstance(module, nn.Linear)
+        ]
+
+        matched = {p: [] for p in patterns}
+        for name in linear_layers:
+            for p in patterns:
+                if re.search(p, name):
+                    matched[p].append(name)
+
+        active_patterns = [p for p, hits in matched.items() if hits]
+
+        logger.info("=== Qwen Edit LoRA Target Detection ===")
+        for p, hits in matched.items():
+            if hits:
+                logger.info(f"  {p:35s} -> {len(hits)} layers")
+        logger.info(f"  Total Linear layers:   {len(linear_layers)}")
+        logger.info(f"  Active LoRA patterns:  {len(active_patterns)}")
+
+        total_hits = sum(len(v) for v in matched.values())
+        if total_hits < 20:
+            logger.warning("Very low LoRA coverage — check target patterns!")
+
+        return active_patterns
+
     def _is_flow_matching(self) -> bool:
         """True when the scheduler is flow-matching (no add_noise method)."""
         sched = self.noise_scheduler

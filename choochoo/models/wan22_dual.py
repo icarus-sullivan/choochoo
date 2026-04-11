@@ -142,6 +142,52 @@ class WANDualAdapter(WANAdapter):
         )
         return self.model
 
+    def detect_lora_targets(self) -> list:
+        """WAN dual-model LoRA target detection — 1:1 with official DiffSynth targets.
+
+        Probes _high_transformer (both share the same architecture).
+        Official targets: q, k, v, o, ffn.0, ffn.2
+        """
+        import re
+
+        if self._high_transformer is None:
+            raise RuntimeError("Call load_model() before detect_lora_targets()")
+
+        patterns = [
+            r".*\.q$",      # attention query
+            r".*\.k$",      # attention key
+            r".*\.v$",      # attention value
+            r".*\.o$",      # attention output
+            r".*\.ffn\.0$", # feed-forward input projection
+            r".*\.ffn\.2$", # feed-forward output projection
+        ]
+
+        linear_layers = [
+            name for name, module in self._high_transformer.named_modules()
+            if isinstance(module, nn.Linear)
+        ]
+
+        matched = {p: [] for p in patterns}
+        for name in linear_layers:
+            for p in patterns:
+                if re.search(p, name):
+                    matched[p].append(name)
+
+        active_patterns = [p for p, hits in matched.items() if hits]
+
+        logger.info("=== WAN Dual LoRA Target Detection ===")
+        for p, hits in matched.items():
+            if hits:
+                logger.info(f"  {p:35s} -> {len(hits)} layers")
+        logger.info(f"  Total Linear layers:   {len(linear_layers)}")
+        logger.info(f"  Active LoRA patterns:  {len(active_patterns)}")
+
+        total_hits = sum(len(v) for v in matched.values())
+        if total_hits < 20:
+            logger.warning("Very low LoRA coverage — check target patterns!")
+
+        return active_patterns
+
     def inject_lora(self, injector: Any) -> None:
         if self._high_transformer is None or self._low_transformer is None:
             raise RuntimeError("Call load_model() before inject_lora()")
