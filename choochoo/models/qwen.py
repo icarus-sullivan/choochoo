@@ -184,7 +184,7 @@ class QwenAdapter(BaseModelAdapter):
             r".*add_k_proj",
             r".*add_v_proj",
             r".*to_add_out",
-            # r".*ff\.net\.\d+\.proj",  # MLP feed-forward — excluded (oversaves)
+            r".*ff\.net\.\d+\.proj",  # MLP feed-forward — excluded (oversaves)
             # r".*img_mlp",              # Image MLP — excluded (oversaves)
             # r".*txt_mlp",              # Text MLP — excluded (oversaves)
             # Conv2d layers are not walked: detect_lora_targets only iterates nn.Linear
