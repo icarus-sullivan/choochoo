@@ -208,6 +208,9 @@ class CheckpointManager:
             if self._comfyui_prefix:
                 high_sd = {"diffusion_model." + k: v for k, v in high_sd.items()}
                 low_sd = {"diffusion_model." + k: v for k, v in low_sd.items()}
+            if adapter is not None and hasattr(adapter, "remap_lora_keys"):
+                high_sd = adapter.remap_lora_keys(high_sd)
+                low_sd = adapter.remap_lora_keys(low_sd)
 
             high_name = _lora_filename(self._model_prefix, self._run_name, step, "high_noise")
             save_file(high_sd, str(directory / high_name), metadata={**base_meta, "branch": "high_noise"})
@@ -228,6 +231,8 @@ class CheckpointManager:
         self._validate_lora_save(injector, state_dict)
         if self._comfyui_prefix:
             state_dict = {"diffusion_model." + k: v for k, v in state_dict.items()}
+        if adapter is not None and hasattr(adapter, "remap_lora_keys"):
+            state_dict = adapter.remap_lora_keys(state_dict)
 
         if self._dual and any(k.endswith("lora_A2") for k in state_dict):
             high_sd, low_sd = _split_dual_state_dict(state_dict)

@@ -143,10 +143,11 @@ class WANDualAdapter(WANAdapter):
         return self.model
 
     def detect_lora_targets(self) -> list:
-        """WAN dual-model LoRA target detection — 1:1 with official DiffSynth targets.
+        """WAN dual-model LoRA target detection — matches diffusers WanTransformer3DModel naming.
 
         Probes _high_transformer (both share the same architecture).
-        Official targets: q, k, v, o, ffn.0, ffn.2
+        Diffusers uses attn1/attn2 + to_q/to_k/to_v/to_out.0 + ffn.net.0.proj/net.2.
+        Keys are remapped to ComfyUI/ai-toolkit canonical names via remap_lora_keys() on save.
         """
         import re
 
@@ -154,12 +155,16 @@ class WANDualAdapter(WANAdapter):
             raise RuntimeError("Call load_model() before detect_lora_targets()")
 
         patterns = [
-            r".*\.q$",      # attention query
-            r".*\.k$",      # attention key
-            r".*\.v$",      # attention value
-            r".*\.o$",      # attention output
-            r".*\.ffn\.0$", # feed-forward input projection
-            r".*\.ffn\.2$", # feed-forward output projection
+            r".*attn1\.to_q$",       # self-attention query
+            r".*attn1\.to_k$",       # self-attention key
+            r".*attn1\.to_v$",       # self-attention value
+            r".*attn1\.to_out\.0$",  # self-attention output
+            r".*attn2\.to_q$",       # cross-attention query
+            r".*attn2\.to_k$",       # cross-attention key
+            r".*attn2\.to_v$",       # cross-attention value
+            r".*attn2\.to_out\.0$",  # cross-attention output
+            r".*ffn\.net\.0\.proj$", # FFN input projection (ApproximateGELU gate)
+            r".*ffn\.net\.2$",       # FFN output linear
         ]
 
         linear_layers = [

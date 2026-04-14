@@ -237,20 +237,26 @@ class WANAdapter(BaseModelAdapter):
         return model
 
     def detect_lora_targets(self) -> list:
-        """WAN-specific LoRA target detection — 1:1 with official DiffSynth targets.
+        """WAN-specific LoRA target detection — matches diffusers WanTransformer3DModel naming.
 
-        Official targets: q, k, v, o, ffn.0, ffn.2
+        Diffusers uses: attn1/attn2 with to_q/to_k/to_v/to_out.0,
+        and FeedForward with net.0.proj (ApproximateGELU gate) + net.2 (output).
+        These map to canonical ComfyUI/ai-toolkit names via remap_lora_keys() on save.
         Applies to Wan2.1 T2V, Wan2.2 T2V/I2V, and WANi2vAdapter (subclass).
         """
         import re
 
         patterns = [
-            r".*\.q$",      # attention query
-            r".*\.k$",      # attention key
-            r".*\.v$",      # attention value
-            r".*\.o$",      # attention output
-            r".*\.ffn\.0$", # feed-forward input projection
-            r".*\.ffn\.2$", # feed-forward output projection
+            r".*attn1\.to_q$",       # self-attention query
+            r".*attn1\.to_k$",       # self-attention key
+            r".*attn1\.to_v$",       # self-attention value
+            r".*attn1\.to_out\.0$",  # self-attention output
+            r".*attn2\.to_q$",       # cross-attention query
+            r".*attn2\.to_k$",       # cross-attention key
+            r".*attn2\.to_v$",       # cross-attention value
+            r".*attn2\.to_out\.0$",  # cross-attention output
+            r".*ffn\.net\.0\.proj$", # FFN input projection (ApproximateGELU gate)
+            r".*ffn\.net\.2$",       # FFN output linear
         ]
 
         linear_layers = [
@@ -297,6 +303,38 @@ class WANAdapter(BaseModelAdapter):
             f"Trainable params: {self.trainable_param_count/1e6:.1f}M / "
             f"{self.param_count/1e9:.2f}B total"
         )
+
+    # Mapping: diffusers WanTransformer3DModel names → ComfyUI/ai-toolkit canonical names
+    _DIFFUSERS_TO_CANONICAL = [
+        ("attn1.to_q",     "self_attn.q"),
+        ("attn1.to_k",     "self_attn.k"),
+        ("attn1.to_v",     "self_attn.v"),
+        ("attn1.to_out.0", "self_attn.o"),
+        ("attn2.to_q",     "cross_attn.q"),
+        ("attn2.to_k",     "cross_attn.k"),
+        ("attn2.to_v",     "cross_attn.v"),
+        ("attn2.to_out.0", "cross_attn.o"),
+        ("ffn.net.0.proj", "ffn.0"),
+        ("ffn.net.2",      "ffn.2"),
+    ]
+
+    def remap_lora_keys(self, state_dict: dict) -> dict:
+        """Rename diffusers layer paths to ComfyUI/ai-toolkit canonical names.
+
+        Called by the checkpoint manager after adding diffusion_model. prefix so
+        saved LoRA keys match what ComfyUI expects:
+          diffusion_model.blocks.N.self_attn.q.lora_A.weight
+          diffusion_model.blocks.N.ffn.0.lora_A.weight
+        """
+        result = {}
+        for key, val in state_dict.items():
+            new_key = key
+            for src, dst in self._DIFFUSERS_TO_CANONICAL:
+                if src in new_key:
+                    new_key = new_key.replace(src, dst)
+                    break
+            result[new_key] = val
+        return result
 
     def forward(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         """WAN flow-matching training forward pass.
