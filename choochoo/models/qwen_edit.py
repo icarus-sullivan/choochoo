@@ -227,6 +227,8 @@ class QwenEditAdapter(BaseModelAdapter):
             r".*add_k_proj",
             r".*add_v_proj",
             r".*to_add_out",
+            r".*img_mlp\.net\.0\.proj",  # Image MLP input projection (gate)
+            r".*txt_mlp\.net\.0\.proj",  # Text MLP input projection (gate)
             r".*img_mlp\.net\.2",      # Image MLP output projection (per official)
             r".*txt_mlp\.net\.2",      # Text MLP output projection (per official)
             r".*img_mod\.1",           # Image modulation — index 1 (per official)
@@ -304,14 +306,15 @@ class QwenEditAdapter(BaseModelAdapter):
 
         source_latents = batch.get("source_latents")
         if source_latents is not None:
-            # diffusers QwenEmbedRope.forward() always takes img_shapes[0] only.
-            # Use frame=2 so RoPE covers the full concatenated sequence (noisy + source).
-            # Frame 0 = noisy target tokens, frame 1 = source tokens.
-            _shape = (2, H // patch_size, W // patch_size)
+            # Two separate image shapes — the edit transformer's RoPE encoder
+            # distinguishes noisy-target tokens from source/control tokens via
+            # separate (1, h, w) tuples. A single (2, h, w) tuple would be
+            # interpreted as a 2-frame video, which is wrong for image editing.
+            _shape = [(1, H // patch_size, W // patch_size), (1, H // patch_size, W // patch_size)]
             source_packed = self._pack_latents(source_latents)
             model_input_packed = torch.cat([noisy_packed, source_packed], dim=1)
         else:
-            _shape = (1, H // patch_size, W // patch_size)
+            _shape = [(1, H // patch_size, W // patch_size)]
             model_input_packed = noisy_packed
         img_shapes = [_shape] * B
 
@@ -330,11 +333,21 @@ class QwenEditAdapter(BaseModelAdapter):
             timestep_model.min().item(), timestep_model.max().item(),
         )
 
+        encoder_attention_mask = batch.get("encoder_attention_mask")
+        txt_seq_lens = encoder_attention_mask.sum(dim=1).tolist() if encoder_attention_mask is not None else None
+
+        extra_kwargs = {}
+        if encoder_attention_mask is not None:
+            extra_kwargs["encoder_hidden_states_mask"] = encoder_attention_mask.to(torch.int64)
+        if txt_seq_lens is not None:
+            extra_kwargs["txt_seq_lens"] = txt_seq_lens
+
         out = self.model(
             model_input_packed,
             timestep=timestep_model,
             encoder_hidden_states=encoder_hidden_states,
             img_shapes=img_shapes,
+            **extra_kwargs,
         )
         # Transformers/DiT return a dataclass; extract .sample if present
         pred = out.sample if hasattr(out, "sample") else out
