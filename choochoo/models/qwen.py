@@ -237,7 +237,7 @@ class QwenAdapter(BaseModelAdapter):
     def _is_flow_matching(self) -> bool:
         """True when the scheduler is flow-matching (no add_noise method)."""
         sched = self.noise_scheduler
-        return sched is not None and not hasattr(sched, "add_noise")
+        return sched is None or not hasattr(sched, "add_noise")
 
     @staticmethod
     def _pack_latents(latents: torch.Tensor, patch_size: int = 2) -> torch.Tensor:
