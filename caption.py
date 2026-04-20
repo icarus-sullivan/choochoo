@@ -100,7 +100,11 @@ for root, _, files in os.walk(args.input_dir):
         media_path = os.path.join(root, file)
         if file.lower().endswith('.avif'):
             png_path = os.path.splitext(media_path)[0] + '.png'
-            Image.open(media_path).convert('RGB').save(png_path)
+            try:
+                Image.open(media_path).convert('RGB').save(png_path)
+            except Exception:
+                import subprocess
+                subprocess.run(['ffmpeg', '-y', '-i', media_path, png_path], check=True, capture_output=True)
             os.remove(media_path)
             media_path = png_path
             file = os.path.basename(png_path)
