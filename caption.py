@@ -1,4 +1,5 @@
 import os
+from PIL import Image
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 import argparse
@@ -28,7 +29,7 @@ model = Qwen3VLForConditionalGeneration.from_pretrained(
 )
 processor = AutoProcessor.from_pretrained(MODEL_ID)
 
-SUPPORTED = ('.png', '.jpg', '.jpeg', '.webp', '.mp4', '.m4v', '.avi', '.mov', '.webm')
+SUPPORTED = ('.png', '.jpg', '.jpeg', '.webp', '.avif', '.mp4', '.m4v', '.avi', '.mov', '.webm')
 
 def build_messages(media_path: str) -> list:
     is_img = media_path.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
@@ -97,6 +98,12 @@ for root, _, files in os.walk(args.input_dir):
         if not file.lower().endswith(SUPPORTED):
             continue
         media_path = os.path.join(root, file)
+        if file.lower().endswith('.avif'):
+            png_path = os.path.splitext(media_path)[0] + '.png'
+            Image.open(media_path).convert('RGB').save(png_path)
+            os.remove(media_path)
+            media_path = png_path
+            file = os.path.basename(png_path)
         txt_path = os.path.splitext(media_path)[0] + ".txt"
         if args.skip_existing and os.path.exists(txt_path):
             print(f"Skipping {file} (caption exists)")
